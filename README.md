@@ -19,3 +19,15 @@ A trustworthy hyperlocal raw material sourcing platform for street vendors.
 1. Clone repo:  
    ```bash
    git clone https://github.com/johnny1786/street
+
+
+
+   # StreetVendor Connect
+
+MVP to connect street vendors with local suppliers.
+
+## Week 1 Goals
+- Wireframes for core pages
+- Auth (signup/login) with roles
+- Basic frontend routing + protected pages
+- Backend setup with DB connection

@@ -1,54 +1,74 @@
+// controllers/productController.js
 import Product from "../models/Product.js";
 import Vendor from "../models/Vendor.js";
 
-// Create a new product (vendor only)
+/**
+ * Vendor creates a product
+ * Body: { vendorId, name, description, price, bulkPrice, category, image, stock, unit }
+ */
 export const createProduct = async (req, res) => {
   try {
-    const { name, description, price, bulkPrice, category, stock, vendorId } = req.body;
+    const {
+      vendorId, name, description, price, bulkPrice,
+      category, image, stock, unit
+    } = req.body;
 
-    // Ensure vendor exists and belongs to the logged-in user
-    const vendor = await Vendor.findOne({ _id: vendorId, userId: req.user.id });
-    if (!vendor) return res.status(403).json({ message: "Not authorized for this vendor" });
+    // Ensure the vendor exists and belongs to the logged-in user (unless admin)
+    const vendor = await Vendor.findById(vendorId);
+    if (!vendor) return res.status(404).json({ message: "Vendor not found" });
+
+    if (req.user.role !== "admin" && vendor.userId.toString() !== req.user.id) {
+      return res.status(403).json({ message: "Not authorized for this vendor" });
+    }
 
     const product = await Product.create({
-      vendorId,
-      name,
-      description,
-      price,
-      bulkPrice,
-      category,
-      stock
+      vendorId, name, description, price, bulkPrice, category, image, stock, unit
     });
 
-    // Link product to vendor
-    vendor.products.push(product._id);
-    await vendor.save();
-
-    res.status(201).json(product);
+    res.status(201).json({ message: "Product created", product });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
 };
 
-// Get all products (optional filters)
-export const getProducts = async (req, res) => {
+/**
+ * Public: list products with optional filters
+ * Query: q (search), category, minPrice, maxPrice, vendorId, page, limit
+ */
+export const listProducts = async (req, res) => {
   try {
-    const { vendorId, category } = req.query;
-    const filter = {};
-    if (vendorId) filter.vendorId = vendorId;
-    if (category) filter.category = category;
+    const {
+      q, category, minPrice, maxPrice, vendorId,
+      page = 1, limit = 20
+    } = req.query;
 
-    const products = await Product.find(filter).populate("vendorId");
+    const filter = {};
+    if (q) filter.$text = { $search: q };
+    if (category) filter.category = category;
+    if (vendorId) filter.vendorId = vendorId;
+    if (minPrice || maxPrice) {
+      filter.price = {};
+      if (minPrice) filter.price.$gte = Number(minPrice);
+      if (maxPrice) filter.price.$lte = Number(maxPrice);
+    }
+
+    const products = await Product
+      .find(filter)
+      .sort({ createdAt: -1 })
+      .skip((Number(page) - 1) * Number(limit))
+      .limit(Number(limit))
+      .populate("vendorId", "shopName");
+
     res.json(products);
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
 };
 
-// Get single product
+/** Get single product by ID */
 export const getProductById = async (req, res) => {
   try {
-    const product = await Product.findById(req.params.id).populate("vendorId");
+    const product = await Product.findById(req.params.id).populate("vendorId", "shopName");
     if (!product) return res.status(404).json({ message: "Product not found" });
     res.json(product);
   } catch (err) {
@@ -56,39 +76,58 @@ export const getProductById = async (req, res) => {
   }
 };
 
-// Update product
+/** Vendor updates own product (or admin) */
 export const updateProduct = async (req, res) => {
   try {
     const product = await Product.findById(req.params.id).populate("vendorId");
     if (!product) return res.status(404).json({ message: "Product not found" });
 
-    // Only vendor owner or admin can update
-    if (product.vendorId.userId.toString() !== req.user.id && req.user.role !== "admin") {
+    if (req.user.role !== "admin" && product.vendorId.userId.toString() !== req.user.id) {
       return res.status(403).json({ message: "Not authorized" });
     }
 
-    Object.assign(product, req.body);
-    await product.save();
+    const allowed = ["name","description","price","bulkPrice","category","image","stock","unit"];
+    allowed.forEach(k => { if (k in req.body) product[k] = req.body[k]; });
 
-    res.json(product);
+    await product.save();
+    res.json({ message: "Product updated", product });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
 };
 
-// Delete product
+/** Vendor deletes own product (or admin) */
 export const deleteProduct = async (req, res) => {
   try {
     const product = await Product.findById(req.params.id).populate("vendorId");
     if (!product) return res.status(404).json({ message: "Product not found" });
 
-    // Only vendor owner or admin can delete
-    if (product.vendorId.userId.toString() !== req.user.id && req.user.role !== "admin") {
+    if (req.user.role !== "admin" && product.vendorId.userId.toString() !== req.user.id) {
       return res.status(403).json({ message: "Not authorized" });
     }
 
     await product.deleteOne();
     res.json({ message: "Product deleted" });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+/** Vendor sees own products (dashboard) */
+export const listMyProducts = async (req, res) => {
+  try {
+    const { vendorId } = req.query;
+    if (!vendorId) return res.status(400).json({ message: "vendorId is required" });
+
+    const vendor = await Vendor.findById(vendorId);
+    if (!vendor) return res.status(404).json({ message: "Vendor not found" });
+
+    if (req.user.role !== "admin" && vendor.userId.toString() !== req.user.id) {
+      return res.status(403).json({ message: "Not authorized" });
+    }
+
+    const products = await Product.find({ vendorId }).sort({ createdAt: -1 });
+    res.json(products);
   } catch (err) {
     res.status(500).json({ message: err.message });
   }

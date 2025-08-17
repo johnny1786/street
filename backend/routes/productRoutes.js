@@ -2,7 +2,7 @@ import express from "express";
 import { protect } from "../middleware/auth.js";
 import {
   createProduct,
-  getProducts,
+  listProducts,
   getProductById,
   updateProduct,
   deleteProduct
@@ -14,7 +14,7 @@ const router = express.Router();
 router.post("/", protect(["vendor", "admin"]), createProduct);
 
 // Get all products (optionally filter by vendor or category)
-router.get("/", getProducts);
+router.get("/", listProducts);
 
 // Get single product details
 router.get("/:id", getProductById);
